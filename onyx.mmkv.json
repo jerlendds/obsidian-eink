@@ -1,0 +1,129 @@
+{
+    "activityConfigMap": {},
+    "autoFreezeConfig": {
+        "autoFreeze": false,
+        "enable": true,
+        "supportAutoFreeze": true
+    },
+    "autoStartConfig": {
+        "autoStart": false,
+        "enable": true,
+        "supportAdjust": true
+    },
+    "colorConfigMap": {},
+    "colorMode": "vivid",
+    "cssConfigMap": {},
+    "dpiConfig": {
+        "dpi": 0,
+        "enable": true
+    },
+    "enable": true,
+    "extraConfig": {
+        "allowSplashScreen": true,
+        "enable": true,
+        "forceFullScreen": false,
+        "fullPMAccess": false,
+        "fullPMAccessTimeout": 300000,
+        "useDialogBorder": false,
+        "usePageKeyAsVolumeKey": true
+    },
+    "forceScrollRefreshClsList": [
+        "com.qmuiteam.qmui.arch.SwipeBackLayout",
+        "mozilla.components.browser.engine.gecko.GeckoEngineView$geckoView$1",
+        "com.dragon.reader.simple.slip.OverScrollView",
+        "com.dragon.read.reader.ui.ReaderOverScrollView"
+    ],
+    "globalActivityConfig": {
+        "clsName": "",
+        "disableScrollAnim": true,
+        "displayConfig": {
+            "bwMode": 0,
+            "cfaColorBrightness": 0,
+            "cfaColorSaturation": 50,
+            "cfaColorSaturationMin": 60,
+            "contrast": 30,
+            "ditherThreshold": 128,
+            "enable": true,
+            "enhance": true,
+            "monoLevel": 10
+        },
+        "eacScrollStyle": 1,
+        "enable": true,
+        "noteConfig": {
+            "compatibleVersionCode": 0,
+            "drawViewKey": "com.getcapacitor.CapacitorWebView",
+            "enable": true,
+            "globalStrokeStyle": {
+                "enable": true,
+                "strokeColor": -16777216,
+                "strokeExtraArgs": [],
+                "strokeParams": [],
+                "strokeStyle": 5,
+                "strokeWidth": 4
+            },
+            "repaintLatency": 150,
+            "styleMap": {},
+            "supportNoteConfig": true
+        },
+        "paintConfig": {
+            "antiAlisingType": 1,
+            "ditherBitmap": false,
+            "enable": true,
+            "fillBrightness": 0,
+            "fillContrast": 0,
+            "fillEAC": false,
+            "iconBrightness": 0,
+            "iconContrast": 232,
+            "iconEAC": true,
+            "iconThreshold": 0,
+            "imgEAC": false,
+            "imgGamma": 51,
+            "quantBits": 3,
+            "textBold": false,
+            "textEACType": 0
+        },
+        "refreshConfig": {
+            "animationDuration": 50,
+            "antiFlicker": 10,
+            "enable": true,
+            "gcInterval": 20,
+            "refreshModeIndex": "refresh_mode_2",
+            "supportRegal": false,
+            "turbo": 5,
+            "updateMode": 2,
+            "useGCForNewSurface": true
+        },
+        "scrollRefreshDelay": 1000
+    },
+    "globalCSSConfig": {
+        "clsName": "",
+        "customCSS": "",
+        "enable": true,
+        "fontBold": false,
+        "fontColor": 0,
+        "fontSize": 100
+    },
+    "keyboardConfig": {
+        "enable": true,
+        "pageKeyMode": 1
+    },
+    "networkConfig": {
+        "enable": true,
+        "overrideRules": 0
+    },
+    "pkgName": "md.obsidian",
+    "rotationConfig": {
+        "enable": false,
+        "overrideRotation": -1
+    },
+    "scrollArgs": {
+        "duration": 600,
+        "endXPercent": 0.5,
+        "endYPercent": 0.8,
+        "sampleTime": 16,
+        "startXPercent": 0.5,
+        "startYPercent": 0.2
+    },
+    "scrollViewWhiteList": [],
+    "supportEAC": true
+}

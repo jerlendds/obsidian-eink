@@ -1,0 +1,8 @@
+{
+	"id": "sample-plugin",
+	"name": "Eink",
+	"version": "1.0.0",
+	"minAppVersion": "1.0.0",
+	"description": "Draw on Markdown pages with pressure-sensitive pens, erasers, and undo/redo.",
+	"isDesktopOnly": false
+}

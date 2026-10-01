@@ -1,0 +1,199 @@
+.eink-host {
+    position: relative;
+}
+
+.eink-surface {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.eink-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+.eink-canvas.eink-navigate {
+    pointer-events: none;
+}
+
+.eink-toolbar {
+    position: absolute;
+    pointer-events: auto;
+    max-width: calc(100% - 8px);
+    color: var(--text-normal);
+}
+
+.eink-toolbar, .eink-toolbar * {
+    box-sizing: border-box;
+}
+
+.eink-toolbar-row {
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    overflow-x: auto;
+    border: 2px solid var(--text-normal);
+    border-radius: 8px;
+    background: var(--background-primary);
+}
+
+.eink-toolbar button {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px;
+    box-shadow: none;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.eink-toolbar-row button {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+
+.eink-toolbar button[aria-pressed="true"] {
+    outline: 2px solid var(--text-normal);
+    outline-offset: -3px;
+    background: var(--background-secondary);
+}
+
+.eink-toolbar button:focus-visible, .eink-toolbar input:focus-visible, .eink-toolbar select:focus-visible {
+    outline: 2px solid var(--text-normal);
+    outline-offset: 2px;
+}
+
+.eink-toolbar button:disabled {
+    opacity: 0.35;
+}
+
+.eink-pen-button {
+    border-bottom: 4px solid var(--eink-pen-color) !important;
+}
+
+.eink-drag-handle {
+    cursor: move;
+    touch-action: none;
+}
+
+.eink-panel {
+    margin-top: 4px;
+    width: 280px;
+    max-width: 100%;
+    max-height: var(--eink-panel-height, 60vh);
+    overflow-y: auto;
+    padding: 14px;
+    border: 2px solid var(--text-normal);
+    border-radius: 8px;
+    background: var(--background-primary);
+}
+
+.eink-panel[hidden] {
+    display: none;
+}
+
+.eink-control {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+    font-size: var(--font-ui-small);
+}
+
+.eink-control input[type="range"], .eink-control select {
+    width: 100%;
+}
+
+.eink-control input[type="range"] {
+    min-height: 28px;
+    margin: 0;
+}
+
+.eink-width-taper {
+    height: 4mm;
+    background: var(--text-normal);
+    clip-path: polygon(0 48.75%, 100% 0, 100% 100%, 0 51.25%);
+}
+
+.eink-width-preview {
+    min-height: 0.1mm;
+    width: 100%;
+    background: var(--text-normal);
+    border-radius: 2mm;
+}
+
+.eink-colors {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.eink-toolbar .eink-color {
+    background: var(--eink-swatch);
+    border: 1px solid #000;
+    border-radius: 50%;
+    min-width: 36px;
+    width: 36px;
+    height: 36px;
+}
+
+.eink-toolbar .eink-color[aria-pressed="true"] {
+    background: var(--eink-swatch);
+    outline: 3px double #fff;
+    outline-offset: -5px;
+    box-shadow: 0 0 0 2px var(--text-normal);
+}
+
+.eink-panel p {
+    font-size: var(--font-ui-smaller);
+    margin-bottom: 0;
+}
+
+.eink-scroll-paper {
+    min-height: var(--eink-paper-height) !important;
+}
+
+.eink-selection-actions {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 2px solid var(--text-normal);
+    border-radius: 8px;
+    background: var(--background-primary);
+    pointer-events: auto;
+}
+
+.eink-selection-actions[hidden] {
+    display: none;
+}
+
+.eink-selection-actions button {
+    min-height: 40px;
+}
+
+.eink-ruled-lines {
+    position: absolute;
+    pointer-events: none;
+    background-position: 0 var(--eink-rule-offset);
+    background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--eink-rule-spacing) - 0.5px), #000 calc(var(--eink-rule-spacing) - 0.5px), #000 var(--eink-rule-spacing));
+}
+
+.eink-ruled-lines[hidden] {
+    display: none;
+}
