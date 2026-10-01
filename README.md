@@ -13,7 +13,8 @@ Pressure-sensitive drawing tools for Markdown pages in Obsidian, designed for us
   - [x] An eraser that selects on the first click and opens its settings on a second click, with a width slider and **Stroke**, **Lasso**, and **Pixel** modes. Pixel is the default.
   - [x] Backward/forward history buttons for undo and redo.
 - [x] Optional thin black ruled lines, spaced to the note’s text line height.
-- [x] Quick circles become lasso selections, with undoable selection deletion.
+- [x] Closed shapes held for 1.5 seconds select ink, with undoable selection and deletion.
+- [x] Offline handwriting-to-text (**OCR**) for selected ink, inserted into the note where you wrote.
 - [x] Accelerated scribble-to-erase gestures, with an adjustable threshold and undo.
 - [x] Per-note saved ink, saved pen presets, and a saved toolbar position.
 - [x] A hand tool for scrolling, selecting text, and editing the underlying note.
@@ -28,10 +29,12 @@ Pressure-sensitive drawing tools for Markdown pages in Obsidian, designed for us
    - **Stroke** removes whole strokes touched by the eraser.
    - **Lasso** removes strokes inside or crossing a loop; the loop closes when you lift the pen. It needs at least three points.
 5. Select **Undo ink** or **Redo ink**. These commands are also available in the command palette, so you can assign hotkeys without replacing the editor's text undo.
-6. Swipe with one finger to scroll while keeping the pen selected. Mouse-wheel and trackpad scrolling also work. If finger drawing is enabled, use two fingers to scroll. Select the hand tool to interact with or edit the underlying note.
-7. Drag the dotted handle to move the toolbar. A focused handle also accepts arrow keys. Close with **×** or the toggle command; closing hides the toolbar and stops drawing input; ink stays visible on the page.
+6. Swipe with two fingers to scroll while the toolbar is open, including with the hand tool selected. Scrolling stops when either finger lifts. Mouse-wheel and trackpad scrolling also work. Select the hand tool to interact with or edit the underlying note.
+7. Drag the dotted handle to move the toolbar. A focused handle also accepts arrow keys. Close with **×** or the toggle command; closing hides the toolbar and stops drawing input; ink stays visible on the page. On Android, opening the toolbar dismisses the note keyboard and prevents editor focus from reopening it until the toolbar closes.
 
-In **Settings → Eink**, enable **Draw with touch** to draw with a finger, or reset the toolbar position. By default, fingers scroll and the stylus draws. Touches that begin while the pen is down are ignored to reduce palm interference. With finger drawing enabled, one finger draws and two fingers scroll.
+Enable **Settings → Eink → Vertical toolbar** to stack the tools vertically. The toolbar has fully rounded ends in either orientation, and tool settings open beside the vertical bar.
+
+In **Settings → Eink**, enable **Draw with touch** to draw with a finger, or reset the toolbar position. By default, two fingers scroll and the stylus draws. Touches that begin while the pen is down are ignored to reduce palm interference. With finger drawing enabled, one finger draws and two fingers scroll.
 
 ## Ruled lines
 
@@ -41,11 +44,21 @@ Spacing follows the computed body text line height in the current reading/editor
 
 ## Circle to select
 
-With a pen selected, draw a quick closed circle or oval around existing ink and lift. The circle disappears as ink and becomes a dashed lasso with outlines around selected strokes. Existing ink stays intact. Strokes enclosed by or crossing the loop are selected; pixel-erasure masks are not selectable.
+With a pen selected, draw one continuous closed shape around existing ink, then keep the pen or finger down at the endpoint for **1.5 seconds**. Circles, ovals, and other closed shapes work at any drawing speed. The shape disappears and one dashed bounding box appears around the selected ink, before you lift. Strokes enclosed by or crossing the shape are selected; pixel-erasure masks are not selectable.
 
-Select **Delete selection** to remove selected strokes in one undoable action, or **Deselect** / **Escape** to clear the selection. Starting a new pen stroke, changing tools, undoing/redoing, or closing the toolbar also clears it. Scrolling preserves the selection at its position on the page. The selection is temporary and is not saved or added to history. This selection currently supports deletion, not moving or resizing ink.
+Drag inside the bounding box with **one finger** to reposition the selected ink, even when **Draw with touch** is off. The box and ink move together. Adding a second finger cancels the move and scrolls instead. Moving is saved as one undo step.
 
-Recognition accepts a single nearly closed loop drawn in 80–1000 ms, at least 24 CSS pixels across both dimensions, with average speed of at least 250 CSS pixels/second. Slow circles and loops around blank space remain ordinary ink. **Settings → Eink → Circle to select** disables recognition when you want to draw quick circles as ink. Circle selection is checked before scribble-to-erase. BOOX's native preview may clear after its normal repaint delay.
+Select **Undo ink** (the back arrow) to undo the selection and restore the exact stroke you drew. Another undo removes that stroke. **Delete selection** removes the selected ink; undo restores it. **Deselect** or Escape clears the bounding box.
+
+Lifting before 1.5 seconds keeps the shape as ordinary ink. Moving more than 4 CSS pixels restarts the hold; opening the shape cancels it. Shapes must be nearly closed and at least 24 CSS pixels across both dimensions. Shapes around blank space remain ink. Disable **Settings → Eink → Circle to select** to turn recognition off. BOOX's native preview may clear after its normal repaint delay.
+
+## Convert handwriting to text
+
+Select ink with a closed shape (see **Circle to select**), then select **OCR**. The selected ink is recognized line by line, the text is inserted into the note at the line under the top of the selection, and the ink is removed. If that line is blank, the text fills it; otherwise the text goes on new lines after it. In reading view the text goes after the rendered block above the ink. **Undo ink** restores the strokes; the inserted text is undone separately with the editor's undo.
+
+Recognition runs entirely on the device; no ink or text leaves it. It uses a small (245,000 parameter) stroke-based model that reads pen movement rather than an image, so it needs no WebAssembly or downloads and adds about 650 KB to `main.js`. Expect roughly 70–80% of characters to be right on everyday English handwriting; check the result. It recognizes English letters, digits and common punctuation (`!"#&'()*+,-./:;?[]`), not other scripts or math notation. On a BOOX Note Air5 C a three-word line takes about 0.25 seconds (0.5 seconds the first time, while the model loads).
+
+The model and weights are from [OnlineHTR](https://github.com/PellelNitram/OnlineHTR) (MIT License, Copyright (c) 2024 Martin Lellep), an implementation of Carbune et al., *Fast multi-language LSTM-based online handwriting recognition* (2020), trained on IAM-OnDB. `scripts/export-htr-weights.py` converts its checkpoint into `src/ocr/htr-weights.bin`.
 
 ## Scribble to erase
 
@@ -85,6 +98,16 @@ npm run test:browser
 ```
 
 The browser test requires Chromium on `PATH`, or a `CHROMIUM` environment variable pointing to its executable. It runs real canvas rendering with a minimal Obsidian API adapter, checks toolbar interactions and all eraser modes, and writes a screenshot to `/tmp/obsidian-eink-test.png`. Core tests cover history, pressure, geometry, settings validation, serialized persistence, and rename/delete behavior. These tests supplement testing inside Obsidian; they do not emulate BOOX hardware. The current API dependency uses the classic settings tab; lint may report a settings-search advisory for newer Obsidian versions.
+
+## Drawing performance
+
+Strokes are drawn as curves through the midpoints between pen samples, so fast writing, which produces fewer samples, stays round instead of showing angled corners. The last half-segment of a stroke appears when you lift the pen.
+
+Pen and pixel-eraser input paints new segments immediately, without waiting for an animation frame. The canvas retains completed ink, so extending a stroke does not replay the page or earlier portions of that stroke. Committing ordinary strokes preserves the existing bitmap. A low-latency canvas hint is enabled where supported by the WebView.
+
+Scrolling, resizing, undo, canceled strokes, and selection edits rebuild the bitmap when needed; saved strokes outside the viewport are skipped. Whole-stroke and lasso eraser previews remain frame-batched. Shape-hold recognition processes only newly added points, and page sizing caches completed stroke extents. These changes reduce app rendering work; BOOX's native preview and post-lift refresh delay still depend on the device configuration.
+
+The browser suite compares incremental output pixel-for-pixel against full replay for every pen style and pixel erasing. It also verifies that extending a 2,000-point live stroke over 20,000 saved points draws one new segment without clearing the canvas. This is a rendering-work check, not a measurement of physical e-ink latency.
 
 ## BOOX development over ADB
 

@@ -117,3 +117,5 @@ export function installDom() {
     delete this.capture;
   };
 }
+
+export const Platform = { isAndroidApp: false };

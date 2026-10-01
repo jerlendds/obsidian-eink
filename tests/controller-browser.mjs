@@ -1,4 +1,4 @@
-import { MarkdownView } from "./obsidian-stub.mjs";
+import { MarkdownView, Platform } from "./obsidian-stub.mjs";
 import { InkController } from "../src/controller.ts";
 
 export async function checkController(store, host, pause, check) {
@@ -48,7 +48,16 @@ export async function checkController(store, host, pause, check) {
     visibleInk(host, 150, 150) && visibleInk(secondary, 150, 250),
     "Saved ink renders in both panes without opening toolbar",
   );
+  const previousAndroid = Platform.isAndroidApp;
+  Platform.isAndroidApp = true;
+  const editor = host.createDiv({ attr: { contenteditable: "true", inputmode: "text" } });
+  editor.focus();
+  check(document.activeElement === editor, "Editor can focus with toolbar closed");
   controller.toggle();
+  check(document.activeElement !== editor && editor.getAttribute("inputmode") === "none",
+    "Opening the toolbar blurs Android editor and suppresses its keyboard");
+  editor.focus();
+  check(document.activeElement !== editor, "Editor refocus cannot reopen keyboard while toolbar is open");
   check(
     !host.querySelector(".eink-toolbar").hidden,
     "Toggle opens active toolbar",
@@ -61,6 +70,7 @@ export async function checkController(store, host, pause, check) {
       !secondary.querySelector(".eink-toolbar").hidden,
     "Only active pane receives drawing toolbar",
   );
+  check(editor.getAttribute("inputmode") === "text", "Switching active pane restores the previous editor input mode");
   controller.toggle();
   await pause();
   check(
@@ -126,5 +136,7 @@ export async function checkController(store, host, pause, check) {
       !host.querySelector(".eink-scroll-paper"),
     "Plugin unload cleans up visible ink and paper sizing",
   );
+  editor.remove();
+  Platform.isAndroidApp = previousAndroid;
   secondary.remove();
 }

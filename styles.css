@@ -31,6 +31,10 @@
     color: var(--text-normal);
 }
 
+.eink-toolbar[hidden] {
+    display: none;
+}
+
 .eink-toolbar, .eink-toolbar * {
     box-sizing: border-box;
 }
@@ -41,7 +45,7 @@
     padding: 6px;
     overflow-x: auto;
     border: 2px solid var(--text-normal);
-    border-radius: 8px;
+    border-radius: 999px;
     background: var(--background-primary);
 }
 
@@ -54,11 +58,49 @@
 }
 
 .eink-toolbar-row button {
+    border-radius: 999px;
     display: flex;
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
     gap: 2px;
+}
+
+.eink-toolbar-vertical {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    width: max-content;
+}
+
+.eink-toolbar-vertical .eink-toolbar-row {
+    flex-direction: column;
+    flex-shrink: 0;
+    max-height: var(--eink-toolbar-height);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+/* Themes pad buttons horizontally; in a fixed 44px button that squeezes the icon away. */
+.eink-toolbar.eink-toolbar-vertical .eink-toolbar-row button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+}
+
+.eink-toolbar-row button > svg {
+    flex-shrink: 0;
+}
+
+.eink-toolbar-vertical .eink-toolbar-row button > span {
+    display: none;
+}
+
+.eink-toolbar-vertical .eink-panel {
+    flex: 0 1 280px;
+    min-width: 0;
+    margin-top: 0;
 }
 
 .eink-toolbar button[aria-pressed="true"] {
@@ -196,4 +238,10 @@
 
 .eink-ruled-lines[hidden] {
     display: none;
+}
+/* Disable native one-finger panning while the toolbar is open, including hand mode. */
+.eink-host.eink-touch-guard,
+.eink-touch-guard .cm-scroller,
+.eink-touch-guard .markdown-preview-view {
+    touch-action: none;
 }

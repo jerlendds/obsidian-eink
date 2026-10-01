@@ -5,6 +5,9 @@ import type { Stroke } from "../drawing/model";
 export class ScrollPaper extends Component {
   private content: HTMLElement | null = null;
   private height = 0;
+  private strokes: Stroke[] | null = null;
+  private inkBottom = 0;
+  private bottoms = new WeakMap<Stroke, number>();
   onload(): void {
     this.register(() => this.detach());
   }
@@ -18,15 +21,24 @@ export class ScrollPaper extends Component {
     }
     if (!this.content) return;
     const nativeMinimum = Number.parseFloat(this.content.style.minHeight) || 0;
-    let inkBottom = 0;
-    for (const stroke of strokes)
-      for (const point of stroke.points)
-        inkBottom = Math.max(inkBottom, point.y + 32);
+    if (strokes !== this.strokes) {
+      this.inkBottom = 0;
+      for (const stroke of strokes) {
+        let bottom = this.bottoms.get(stroke);
+        if (bottom === undefined) {
+          bottom = 0;
+          for (const point of stroke.points) bottom = Math.max(bottom, point.y + 32);
+          this.bottoms.set(stroke, bottom);
+        }
+        this.inkBottom = Math.max(this.inkBottom, bottom);
+      }
+      this.strokes = strokes;
+    }
     this.height = Math.max(
       this.height,
       nativeMinimum,
       scroller.clientHeight * 2,
-      inkBottom + scroller.clientHeight,
+      this.inkBottom + scroller.clientHeight,
     );
     this.content.addClass("eink-scroll-paper");
     this.apply();

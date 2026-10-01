@@ -1,5 +1,6 @@
 import "./lasso.mjs";
 import "./scribble.mjs";
+import "./ocr.mjs";
 import assert from "node:assert/strict";
 import { DrawingHistory, newPen, widthAt } from "../src/drawing/model.ts";
 import { lassoHits, touchesStroke } from "../src/drawing/geometry.ts";

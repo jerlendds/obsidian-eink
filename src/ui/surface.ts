@@ -1,4 +1,4 @@
-import { Component, type MarkdownView } from "obsidian";
+import { Component, Notice, type MarkdownView } from "obsidian";
 import {
   clamp,
   MM_TO_PX,
@@ -9,7 +9,7 @@ import {
   type EraserType,
 } from "../drawing/model";
 import { lassoHits, touchesStroke } from "../drawing/geometry";
-import { renderStroke } from "../drawing/render";
+import { InkRenderer } from "../drawing/ink-renderer";
 import {
   isEraseScribble,
   eraseScribbledStrokes,
@@ -21,7 +21,10 @@ import { TouchScroll } from "./touch-scroll";
 import { ScrollPaper } from "./scroll-paper";
 import { InkSelection } from "./selection";
 import { RuledLines } from "./ruled-lines";
-import { isQuickCircle } from "../drawing/lasso";
+import { AndroidKeyboardGuard } from "./android-keyboard";
+import { SelectionHold } from "./selection-hold";
+import { recognizeInk } from "../ocr/recognize-ink";
+import { insertRecognizedText } from "../ocr/insert";
 
 interface Gesture {
   pointer: number;
@@ -38,7 +41,7 @@ export class InkSurface extends Component {
   readonly toolbar: InkToolbar;
   private canvas: HTMLCanvasElement;
   private ruling: RuledLines;
-  private context: CanvasRenderingContext2D;
+  private renderer: InkRenderer;
   private scroller: HTMLElement;
   private gesture: Gesture | null = null;
   private touchScroll: TouchScroll;
@@ -47,6 +50,8 @@ export class InkSurface extends Component {
   private frame = 0;
   private toolbarVisible = true;
   private selection: InkSelection;
+  private selectionHold: SelectionHold;
+  private keyboardGuard: AndroidKeyboardGuard;
   private window: Window;
   constructor(
     readonly view: MarkdownView,
@@ -58,6 +63,8 @@ export class InkSurface extends Component {
     super();
     this.history = store.history(path);
     this.window = view.contentEl.win;
+    this.keyboardGuard = this.addChild(new AndroidKeyboardGuard(view.contentEl));
+    this.selectionHold = this.addChild(new SelectionHold(this.window, () => this.selectHeldShape()));
     this.element = view.contentEl.createDiv({ cls: "eink-surface" });
     this.ruling = this.addChild(
       new RuledLines(
@@ -70,15 +77,15 @@ export class InkSurface extends Component {
       cls: "eink-canvas",
       attr: {
         "aria-label":
-          "Ink drawing layer. Draw with a pen and swipe with a finger to scroll.",
+          "Ink drawing layer. Draw with a pen and swipe with two fingers to scroll.",
       },
     });
-    const context = this.canvas.getContext("2d");
+    const context = this.canvas.getContext("2d", { desynchronized: true });
     if (!context) {
       this.element.remove();
       throw new Error("Canvas is unavailable");
     }
-    this.context = context;
+    this.renderer = new InkRenderer(this.canvas, context);
     this.scroller = this.findScroller();
     this.selection = this.addChild(
       new InkSelection(
@@ -94,16 +101,17 @@ export class InkSurface extends Component {
           )
             this.changed();
         },
+        (ids) => this.convertToText(ids),
       ),
     );
     this.touchScroll = this.addChild(
       new TouchScroll(
         this.canvas,
         () => this.scroller,
-        () => this.store.settings.drawWithTouch,
-        () => this.gesture?.pointerType === "pen",
+        () => (this.store.settings.drawWithTouch || this.selection.active) && this.toolbar.tool !== "hand",
+        () => this.gesture?.pointerType === "pen" || this.selection.dragPointerType === "pen",
         () => {
-          if (this.gesture?.pointerType === "touch") this.cancel(false);
+          if (this.gesture?.pointerType === "touch" || this.selection.dragPointerType === "touch") this.cancel(false);
         },
         () => this.scrolled(),
       ),
@@ -133,11 +141,17 @@ export class InkSurface extends Component {
   }
   onload(): void {
     this.view.contentEl.addClass("eink-host");
+    this.view.contentEl.toggleClass("eink-touch-guard", this.toolbarVisible);
     this.register(() => {
       this.gesture = null;
+      this.renderer.invalidate();
       this.window.cancelAnimationFrame(this.frame);
       this.element.remove();
-      this.view.contentEl.removeClass("eink-host");
+      this.view.contentEl.removeClass("eink-host", "eink-touch-guard");
+    });
+    this.registerDomEvent(this.canvas, "contextrestored", () => {
+      this.renderer.invalidate();
+      this.requestRender();
     });
     this.registerDomEvent(this.canvas, "pointerdown", (event) =>
       this.start(event),
@@ -154,6 +168,17 @@ export class InkSurface extends Component {
     this.registerDomEvent(this.canvas, "lostpointercapture", (event) =>
       this.cancelPointer(event),
     );
+    // The hand tool passes mouse/pen input through, but still guards touch scrolling.
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture"] as const) {
+      this.registerDomEvent(this.view.contentEl, type, (event) => {
+        if (!this.toolbarVisible || this.toolbar.tool !== "hand" || event.pointerType !== "touch") return;
+        if (event.target !== this.canvas && this.element.contains(event.target as Node)) return;
+        event.stopPropagation();
+        if (type === "pointerdown") this.touchScroll.down(event);
+        else if (type === "pointermove") this.touchScroll.move(event);
+        else this.touchScroll.up(event);
+      }, true);
+    }
     this.registerDomEvent(
       this.canvas,
       "wheel",
@@ -215,6 +240,8 @@ export class InkSurface extends Component {
       this.touchScroll.reset();
     }
     this.toolbarVisible = visible;
+    this.keyboardGuard.setEnabled(visible);
+    this.view.contentEl.toggleClass("eink-touch-guard", visible);
     this.toolbar.element.hidden = !visible;
     this.canvas.toggleClass(
       "eink-navigate",
@@ -228,8 +255,7 @@ export class InkSurface extends Component {
     this.touchScroll.reset();
     this.canvas.toggleClass("eink-navigate", tool === "hand");
   }
-  private point(event: PointerEvent): Point {
-    const rect = this.scroller.getBoundingClientRect();
+  private point(event: PointerEvent, rect = this.scroller.getBoundingClientRect()): Point {
     return {
       x: event.clientX - rect.left + this.scroller.scrollLeft,
       y: event.clientY - rect.top + this.scroller.scrollTop,
@@ -242,11 +268,10 @@ export class InkSurface extends Component {
     if (this.touchScroll.down(event) || this.touchScroll.active) return;
     if (
       this.gesture ||
+      this.selection.dragPointer !== undefined ||
       !event.isPrimary ||
       (event.button !== 0 && event.button !== 5)
     )
-      return;
-    if (event.pointerType === "touch" && !this.store.settings.drawWithTouch)
       return;
     const rect = this.scroller.getBoundingClientRect();
     if (
@@ -256,6 +281,13 @@ export class InkSurface extends Component {
       event.clientY >= rect.bottom
     )
       return;
+    if (event.button === 0 && this.toolbar.tool === "pen" &&
+      this.selection.startDrag(event.pointerId, event.pointerType, this.point(event, rect))) {
+      event.preventDefault();
+      this.canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (event.pointerType === "touch" && !this.store.settings.drawWithTouch) return;
     event.preventDefault();
     this.selection.clear();
     const tool =
@@ -266,56 +298,64 @@ export class InkSurface extends Component {
       pen.pressure = 0;
       pen.type = "Pen";
     }
+    const start = this.point(event, rect);
     this.gesture = {
       pointer: event.pointerId,
       pointerType: event.pointerType,
       eraser: this.store.settings.eraserType,
       history: this.history,
       circleLasso: this.store.settings.circleLasso,
-      timedPoints: [{ ...this.point(event), time: event.timeStamp }],
+      timedPoints: [{ ...start, time: event.timeStamp }],
       scribbleThreshold: this.store.settings.scribbleErase
         ? this.store.settings.scribbleAcceleration
         : null,
-      stroke: { id: uniqueId(), tool, pen, points: [this.point(event)] },
+      stroke: { id: uniqueId(), tool, pen, points: [start] },
     };
     this.canvas.setPointerCapture(event.pointerId);
-    this.requestRender();
+    this.renderInput();
   }
   private move(event: PointerEvent): void {
     if (this.touchScroll.move(event)) return;
+    if (this.selection.dragPointer === event.pointerId) {
+      event.preventDefault();
+      this.selection.moveDrag(this.point(event));
+      return;
+    }
     if (!this.gesture || this.gesture.pointer !== event.pointerId) return;
     event.preventDefault();
     const samples =
       typeof event.getCoalescedEvents === "function"
         ? event.getCoalescedEvents()
         : [];
+    const rect = this.scroller.getBoundingClientRect();
     for (const sample of samples.length ? samples : [event]) {
       const points = this.gesture.stroke.points;
-      const point = this.point(sample),
+      const point = this.point(sample, rect),
         previous = points[points.length - 1]!;
-      this.gesture.timedPoints.push({ ...point, time: sample.timeStamp });
+      if (this.gesture.scribbleThreshold !== null)
+        this.gesture.timedPoints.push({ ...point, time: sample.timeStamp });
       if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 0.5)
         this.gesture.stroke.points.push(point);
     }
-    this.requestRender();
+    this.renderInput();
+    if (this.gesture.circleLasso && this.gesture.stroke.tool === "pen")
+      this.selectionHold.update(this.gesture.stroke.points);
   }
   private finish(event: PointerEvent): void {
     this.move(event);
     if (this.touchScroll.up(event)) return;
+    if (this.selection.dragPointer === event.pointerId) {
+      const moved = this.selection.finishDrag();
+      if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+      if (moved && this.history.commit(moved)) this.changed();
+      return;
+    }
     if (!this.gesture || this.gesture.pointer !== event.pointerId) return;
     const gesture = this.gesture;
+    this.selectionHold.reset();
     this.gesture = null;
     if (this.canvas.hasPointerCapture(event.pointerId))
       this.canvas.releasePointerCapture(event.pointerId);
-    if (
-      gesture.stroke.tool === "pen" &&
-      gesture.circleLasso &&
-      isQuickCircle(gesture.timedPoints) &&
-      this.selection.select(gesture.stroke.points)
-    ) {
-      this.requestRender();
-      return;
-    }
     let result = this.preview(gesture);
     if (
       gesture.stroke.tool === "pen" &&
@@ -331,6 +371,40 @@ export class InkSurface extends Component {
     }
     if (gesture.history.commit(result)) this.changed();
     this.requestRender();
+  }
+  private selectHeldShape(): void {
+    const gesture = this.gesture;
+    if (!gesture || !this.store.settings.circleLasso || !this.selection.select(gesture.stroke.points)) return;
+    this.selectionHold.reset();
+    // Record drawing and conversion separately: the first undo restores the exact loop.
+    const original = gesture.history.strokes;
+    gesture.history.commit([...original, gesture.stroke]);
+    gesture.history.commit(original);
+    this.gesture = null;
+    this.renderer.invalidate();
+    this.changed();
+  }
+  /** Replace selected ink with recognized text in the note, at the ink's position. */
+  private async convertToText(ids: Set<string>): Promise<void> {
+    const history = this.history;
+    const selected = history.strokes.filter((stroke) => ids.has(stroke.id));
+    try {
+      const { text, top } = await recognizeInk(selected, this.window);
+      if (!text) {
+        new Notice("No text recognized.");
+        return;
+      }
+      // The note or pane may have changed while recognition yielded.
+      if (history !== this.history || !this.element.isConnected) return;
+      await insertRecognizedText(this.view, this.scroller, top, text);
+    } catch (error) {
+      console.error("Eink: handwriting recognition failed", error);
+      new Notice("Could not convert the ink to text.");
+      return;
+    }
+    this.selection.clear();
+    this.cancel();
+    if (history.commit(history.strokes.filter((stroke) => !ids.has(stroke.id)))) this.changed();
   }
   private preview(gesture: Gesture): Stroke[] {
     const { stroke, eraser, history } = gesture;
@@ -349,16 +423,19 @@ export class InkSurface extends Component {
     );
   }
   private scrolled(): void {
+    this.selectionHold.reset();
     this.paper.extend(this.scroller);
     this.ruling.refresh();
     this.requestRender();
   }
   private cancelPointer(event: PointerEvent): void {
     this.touchScroll.up(event);
-    if (this.gesture?.pointer === event.pointerId) this.cancel();
+    if (this.gesture?.pointer === event.pointerId || this.selection.dragPointer === event.pointerId) this.cancel();
   }
   private cancel(releaseCapture = true): void {
-    const pointer = this.gesture?.pointer;
+    this.selectionHold.reset();
+    const pointer = this.gesture?.pointer ?? this.selection.dragPointer;
+    this.selection.cancelDrag();
     this.gesture = null;
     if (
       releaseCapture &&
@@ -379,6 +456,7 @@ export class InkSurface extends Component {
     if (this.history.redo()) this.changed();
   }
   private changed(): void {
+    this.renderNow();
     this.paper.attach(this.scroller, this.history.strokes);
     void this.store.changed(this.path, this.history);
     this.updateHistory();
@@ -391,14 +469,13 @@ export class InkSurface extends Component {
   private resize(): void {
     this.ruling.refresh();
     const ratio = this.window.devicePixelRatio || 1;
-    this.canvas.width = Math.max(
-      1,
-      Math.round(this.element.clientWidth * ratio),
-    );
-    this.canvas.height = Math.max(
-      1,
-      Math.round(this.element.clientHeight * ratio),
-    );
+    const width = Math.max(1, Math.round(this.element.clientWidth * ratio));
+    const height = Math.max(1, Math.round(this.element.clientHeight * ratio));
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+      this.renderer.invalidate();
+    }
     this.requestRender();
   }
   private requestRender(): void {
@@ -408,47 +485,46 @@ export class InkSurface extends Component {
       this.render();
     });
   }
+  private renderInput(): void {
+    if (this.gesture?.stroke.tool === "pen" || this.gesture?.eraser === "Pixel") this.renderNow();
+    else this.requestRender();
+  }
+  private renderNow(): void {
+    if (this.frame) this.window.cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    this.render();
+  }
   private render(): void {
-    const context = this.context,
-      ratio = this.window.devicePixelRatio || 1;
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
     const rect = this.scroller.getBoundingClientRect(),
       canvasRect = this.canvas.getBoundingClientRect();
-    context.save();
-    context.beginPath();
-    context.rect(
-      rect.left - canvasRect.left,
-      rect.top - canvasRect.top,
-      rect.width,
-      rect.height,
-    );
-    context.clip();
-    context.translate(
-      rect.left - canvasRect.left - this.scroller.scrollLeft,
-      rect.top - canvasRect.top - this.scroller.scrollTop,
-    );
-    for (const stroke of this.gesture
-      ? this.preview(this.gesture)
-      : this.history.strokes)
-      renderStroke(context, stroke);
-    if (
-      this.gesture?.stroke.tool === "eraser" &&
-      this.gesture.eraser === "Lasso"
-    ) {
-      context.strokeStyle = "#000000";
-      context.lineWidth = 1;
-      context.setLineDash([5, 5]);
-      context.beginPath();
-      this.gesture.stroke.points.forEach((point, i) => {
-        if (i === 0) context.moveTo(point.x, point.y);
-        else context.lineTo(point.x, point.y);
-      });
-      context.closePath();
-      context.stroke();
-    }
-    this.selection.render(context);
-    context.restore();
+    const gesture = this.gesture;
+    const incremental = gesture && (gesture.stroke.tool === "pen" || gesture.eraser === "Pixel");
+    const lasso = gesture?.stroke.tool === "eraser" && gesture.eraser === "Lasso";
+    const strokes = gesture && !incremental ? this.preview(gesture) : this.history.strokes;
+    this.renderer.render(this.selection.preview(strokes), incremental ? gesture.stroke : null, {
+      ratio: this.window.devicePixelRatio || 1,
+      left: rect.left - canvasRect.left,
+      top: rect.top - canvasRect.top,
+      width: rect.width,
+      height: rect.height,
+      scrollLeft: this.scroller.scrollLeft,
+      scrollTop: this.scroller.scrollTop,
+    }, this.selection.active || lasso ? (context) => {
+      if (lasso) {
+        context.save();
+        context.strokeStyle = "#000000";
+        context.lineWidth = 1;
+        context.setLineDash([5, 5]);
+        context.beginPath();
+        gesture.stroke.points.forEach((point, i) => {
+          if (i === 0) context.moveTo(point.x, point.y);
+          else context.lineTo(point.x, point.y);
+        });
+        context.closePath();
+        context.stroke();
+        context.restore();
+      }
+      this.selection.render(context);
+    } : undefined);
   }
 }

@@ -58,8 +58,8 @@
                 "strokeColor": -16777216,
                 "strokeExtraArgs": [],
                 "strokeParams": [],
-                "strokeStyle": 5,
-                "strokeWidth": 4
+                "strokeStyle": 0,
+                "strokeWidth": 3
             },
             "repaintLatency": 150,
             "styleMap": {},

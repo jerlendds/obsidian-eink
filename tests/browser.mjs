@@ -1,3 +1,6 @@
+import { checkInkRenderer } from "./render-browser.mjs";
+import { checkAndroidKeyboard } from "./keyboard-browser.mjs";
+import { checkSelectionDrag, checkSelectionOcr } from "./selection-browser.mjs";
 import { checkController } from "./controller-browser.mjs";
 import { installDom } from "./obsidian-stub.mjs";
 import { InkSurface } from "../src/ui/surface.ts";
@@ -104,10 +107,12 @@ async function run() {
     textSample.style.removeProperty("font-size");
     textSample.style.removeProperty("line-height");
 
-    draw([
-      [100, 250],
-      [300, 250],
-    ]);
+    pointer("pointerdown", 100, 250);
+    check(alpha(100, 250) > 0, "Pen-down paints immediately without waiting for an animation frame");
+    pointer("pointermove", 300, 250);
+    check(alpha(200, 250) > 0 && surface.frame === 0,
+      "Pen-move paints new ink before the next animation frame");
+    pointer("pointerup", 300, 250);
     await pause();
     check(
       alpha(200, 250) > 0,
@@ -121,14 +126,14 @@ async function run() {
         }),
     );
     check(saved.drawings["Note.md"].length === 1, "Drawing persists");
-    const circle = (duration = 400, cx = 200, cy = 250, cancel = false) => {
+    const circle = async (duration = 400, cx = 200, cy = 250, cancel = false, hold = false, rough = false) => {
       for (let i = 0; i <= 32; i++) {
         const angle = (i / 32) * Math.PI * 2;
         const event = new PointerEvent(
           i === 0 ? "pointerdown" : "pointermove",
           {
-            clientX: cx + Math.cos(angle) * 130,
-            clientY: cy + Math.sin(angle) * 60,
+            clientX: cx + Math.cos(angle) * 130 + (rough ? (i === 32 ? 20 : Math.sin(i * 3) * 8) : 0),
+            clientY: cy + Math.sin(angle) * 60 + (rough ? (i === 32 ? 18 : Math.sin(i * 5) * 5) : 0),
             pointerId: 13,
             pointerType: "pen",
             pressure: 0.5,
@@ -140,6 +145,24 @@ async function run() {
           value: 10000 + (i / 32) * duration,
         });
         canvas.dispatchEvent(event);
+      }
+      if (hold) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        check(selection.hidden, "One second of holding does not select");
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        check(!selection.hidden, "Selection appears after 1.5 seconds before lifting");
+        const endX = cx + 130 + (rough ? 20 : 0), endY = cy + (rough ? 18 : 0);
+        check(alpha(endX, endY) === 0, "The loop disappears from the canvas before pen-up");
+        const pixels = ctx.getImageData(80, 230, 240, 40).data;
+        let hasBlue = false;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (pixels[i + 2] > pixels[i] && pixels[i + 3] > 0) hasBlue = true;
+        }
+        check(hasBlue, "The bounding box is painted before lifting or dragging");
+        await new Promise((resolve) => setTimeout(resolve, 650));
+        pointer("pointermove", endX + 2, endY + 2, { pointerId: 13 });
+        check(!selection.hidden && alpha(endX, endY) === 0,
+          "Holding longer and receiving late pen samples preserves the selection");
       }
       const end = new PointerEvent(cancel ? "pointercancel" : "pointerup", {
         clientX: cx + 130,
@@ -154,11 +177,11 @@ async function run() {
       canvas.dispatchEvent(end);
     };
     const selection = host.querySelector(".eink-selection-actions");
-    circle();
+    await circle(1800, 200, 250, false, true, true);
     await pause();
     check(
       !selection.hidden && selection.textContent.includes("1 stroke selected"),
-      "Quick circle creates lasso selection",
+      "Closed shape held for 1.5 seconds creates selection",
     );
     check(
       store.history("Note.md").strokes.length === 1 && alpha(200, 250) > 0,
@@ -197,28 +220,35 @@ async function run() {
       "Redo selection deletion",
     );
     surface.undo();
-    circle(1800);
+    button("Undo ink").click();
+    await pause();
+    check(selection.hidden && store.history("Note.md").strokes.length === 2 &&
+      store.history("Note.md").strokes.at(-1).points.length === 33,
+      "Back/undo deselects and restores the original selection stroke");
+    surface.undo();
+    check(store.history("Note.md").strokes.length === 1, "Next undo removes the restored stroke");
+    await circle(1800);
     await pause();
     check(
       selection.hidden && store.history("Note.md").strokes.length === 2,
       "Slow circle stays ink",
     );
     surface.undo();
-    circle(400, 200, 450);
+    await circle(400, 200, 450);
     await pause();
     check(
       selection.hidden && store.history("Note.md").strokes.length === 2,
       "Circle around blank space remains ink",
     );
     surface.undo();
-    circle(400, 200, 250, true);
+    await circle(400, 200, 250, true);
     await pause();
     check(
       selection.hidden && store.history("Note.md").strokes.length === 1,
       "Canceled circle makes no selection",
     );
     store.settings.circleLasso = false;
-    circle();
+    await circle();
     await pause();
     check(
       selection.hidden && store.history("Note.md").strokes.length === 2,
@@ -226,10 +256,12 @@ async function run() {
     );
     surface.undo();
     store.settings.circleLasso = true;
-    circle();
+    await circle(400, 200, 250, false, true);
     await pause();
     host.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     check(selection.hidden, "Escape clears selection");
+    surface.undo(); // Restore the shape after clearing its selection.
+    surface.undo(); // Remove the shape and restore the original fixture history.
     // Explicit timestamps let real PointerEvent handling exercise fast and slow gestures deterministically.
     const scratch = (step, y = 250, cancel = false, passes = 4) => {
       const xs = Array.from({ length: passes + 1 }, (_, i) =>
@@ -426,9 +458,18 @@ async function run() {
     touch("pointermove", 400, 250);
     touch("pointerup", 400, 250);
     await pause();
+    check(scroll.scrollTop === 0, "One finger cannot scroll with the toolbar open");
+    touch("pointerdown", 400, 450, 11);
+    touch("pointerdown", 500, 450, 12, false);
+    touch("pointermove", 400, 250, 11);
+    touch("pointermove", 500, 250, 12, false);
+    touch("pointerup", 400, 250, 11);
+    touch("pointermove", 500, 150, 12, false);
+    touch("pointerup", 500, 150, 12, false);
+    await pause();
     check(
       scroll.scrollTop === 200 && surface.toolbar.tool === "pen",
-      "One finger scrolls while pen tool remains active",
+      "Two fingers scroll; lifting one immediately stops scrolling",
     );
     check(
       alpha(150, 50) > 0,
@@ -496,6 +537,30 @@ async function run() {
     );
     surface.undo();
     store.settings.drawWithTouch = false;
+    button("Navigate and edit note").click();
+    const handStart = scroll.scrollTop;
+    const handTouch = (type, y, id) => scroll.dispatchEvent(new PointerEvent(type, {
+      pointerType: "touch", pointerId: id, clientX: 400, clientY: y, bubbles: true,
+    }));
+    check(getComputedStyle(scroll).touchAction === "none", "Native touch panning is blocked with toolbar open");
+    handTouch("pointerdown", 450, 21);
+    handTouch("pointermove", 350, 21);
+    check(scroll.scrollTop === handStart, "Hand tool blocks one-finger scrolling");
+    handTouch("pointerdown", 350, 22);
+    handTouch("pointermove", 250, 21);
+    handTouch("pointermove", 250, 22);
+    handTouch("pointercancel", 250, 21);
+    handTouch("pointermove", 150, 22);
+    handTouch("pointerup", 150, 22);
+    check(scroll.scrollTop === handStart + 100, "Hand tool requires two fingers, including after cancellation");
+    surface.setToolbarVisible(false);
+    check(getComputedStyle(scroll).touchAction === "auto", "Closing toolbar restores native touch scrolling");
+    handTouch("pointerdown", 450, 23);
+    handTouch("pointermove", 350, 23);
+    handTouch("pointerup", 350, 23);
+    check(scroll.scrollTop === handStart + 100, "Closed toolbar does not route touch gestures");
+    surface.setToolbarVisible(true);
+    host.querySelector(".eink-pen-button").click();
     const previousHeight = scroll.scrollHeight;
     scroll.scrollTop = previousHeight - scroll.clientHeight;
     scroll.dispatchEvent(new Event("scroll"));
@@ -583,8 +648,12 @@ async function run() {
     );
     surface.load();
     await pause();
+    await checkSelectionDrag(check, pause);
+    await checkSelectionOcr(check, pause);
+    await checkAndroidKeyboard(check, pause);
+    const renderCheck = checkInkRenderer(check);
     document.querySelector("#result").textContent =
-      "PASS: canvas, pen controls, all erasers, undo/redo, scribble, finger scrolling, anchored paper, persistent ink across panes, palm rejection, unload/reopen";
+      "PASS: canvas, pen controls, all erasers, undo/redo, scribble, finger scrolling, anchored paper, persistent ink across panes, palm rejection, unload/reopen; " + renderCheck;
   } catch (error) {
     document.querySelector("#result").textContent = `FAIL: ${error.stack}`;
   }

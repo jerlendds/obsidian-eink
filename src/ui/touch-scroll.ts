@@ -18,22 +18,23 @@ export class TouchScroll extends Component {
     if (event.pointerType !== "touch") return false;
     if (this.penDown()) return true; // Palm contact must not move the page beneath a pen.
     this.fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (!this.drawWithTouch() || this.fingers.size > 1 || this.scrolling) {
+    event.preventDefault();
+    this.canvas.setPointerCapture(event.pointerId);
+    if (this.fingers.size > 1 || this.scrolling) {
       this.scrolling = true;
       this.cancelFingerInk();
-      event.preventDefault();
-      this.canvas.setPointerCapture(event.pointerId);
       return true;
     }
-    return false;
+    return !this.drawWithTouch();
   }
   move(event: PointerEvent): boolean {
     if (event.pointerType !== "touch") return false;
     const previous = this.fingers.get(event.pointerId);
     if (!previous) return true;
     this.fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (!this.scrolling) return false;
+    if (!this.scrolling) return !this.drawWithTouch();
     event.preventDefault();
+    if (this.fingers.size < 2 || this.penDown()) return true;
     const scroller = this.scroller();
     // Averaging each finger's delta moves by the gesture's centroid.
     scroller.scrollLeft += (previous.x - event.clientX) / this.fingers.size;
@@ -43,7 +44,7 @@ export class TouchScroll extends Component {
   }
   up(event: PointerEvent): boolean {
     if (event.pointerType !== "touch") return false;
-    const consumed = this.scrolling || !this.fingers.has(event.pointerId);
+    const consumed = this.scrolling || !this.drawWithTouch() || !this.fingers.has(event.pointerId);
     this.fingers.delete(event.pointerId);
     if (this.fingers.size === 0) this.scrolling = false;
     if (consumed && this.canvas.hasPointerCapture(event.pointerId))
@@ -54,7 +55,12 @@ export class TouchScroll extends Component {
     return this.scrolling;
   }
   reset(): void {
+    const pointers = [...this.fingers.keys()];
     this.fingers.clear();
     this.scrolling = false;
+    for (const pointer of pointers) {
+      if (this.canvas.hasPointerCapture(pointer))
+        this.canvas.releasePointerCapture(pointer);
+    }
   }
 }

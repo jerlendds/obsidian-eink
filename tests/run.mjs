@@ -14,6 +14,7 @@ try {
     platform: "node",
     format: "esm",
     alias,
+    loader: { ".bin": "binary" },
     outfile: join(directory, "core.mjs"),
   });
   await import(pathToFileURL(join(directory, "core.mjs")).href);
@@ -24,6 +25,7 @@ try {
       platform: "browser",
       format: "iife",
       alias,
+    loader: { ".bin": "binary" },
       outfile: join(directory, "browser.js"),
     });
     const css = await readFile("styles.css", "utf8");

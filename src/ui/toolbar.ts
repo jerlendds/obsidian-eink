@@ -301,8 +301,12 @@ export class InkToolbar extends Component {
   reposition(): void {
     const parent = this.element.parentElement;
     if (!parent) return;
+    const vertical = this.store.settings.verticalToolbar;
+    this.element.toggleClass("eink-toolbar-vertical", vertical);
+    this.element.setAttribute("aria-orientation", vertical ? "vertical" : "horizontal");
     this.element.setCssProps({
-      "--eink-panel-height": `${Math.max(40, parent.clientHeight - this.row.offsetHeight - 12)}px`,
+      "--eink-toolbar-height": `${Math.max(40, parent.clientHeight - 8)}px`,
+      "--eink-panel-height": `${Math.max(40, parent.clientHeight - (vertical ? 8 : this.row.offsetHeight + 12))}px`,
     });
     const x = Math.max(
       0,

@@ -20,6 +20,7 @@ export interface EinkSettings {
   circleLasso: boolean;
   scribbleErase: boolean;
   scribbleAcceleration: number;
+  verticalToolbar: boolean;
   toolbarX: number;
   toolbarY: number;
 }
@@ -80,6 +81,7 @@ export function normalizeSettings(value: unknown): EinkSettings {
       5000,
       100000,
     ),
+    verticalToolbar: data.verticalToolbar === true,
     toolbarX: numeric(data.toolbarX, 16, 0, 10000),
     toolbarY: numeric(data.toolbarY, 16, 0, 10000),
   };
@@ -110,7 +112,7 @@ export class EinkSettingTab extends PluginSettingTab {
     new Setting(this.containerEl)
       .setName("Draw with touch")
       .setDesc(
-        "When off, draw with a pen and scroll with one finger. When on, draw with one finger and scroll with two.",
+        "Allow drawing with one finger. Scrolling always requires two fingers while the toolbar is open.",
       )
       .addToggle((toggle) =>
         toggle
@@ -123,7 +125,7 @@ export class EinkSettingTab extends PluginSettingTab {
     new Setting(this.containerEl)
       .setName("Circle to select")
       .setDesc(
-        "A fast closed circle around ink becomes a lasso selection. Draw slowly to keep a circle as ink.",
+        "Draw a closed shape around ink and hold the endpoint for 1.5 seconds to select. Undo restores the shape as ink.",
       )
       .addToggle((toggle) =>
         toggle
@@ -158,6 +160,18 @@ export class EinkSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (value) => {
             this.plugin.store.settings.scribbleAcceleration = value;
+            await this.plugin.store.save();
+          }),
+      );
+    new Setting(this.containerEl)
+      .setName("Vertical toolbar")
+      .setDesc("Arrange drawing tools in a vertical bar.")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.store.settings.verticalToolbar)
+          .onChange(async (value) => {
+            this.plugin.store.settings.verticalToolbar = value;
+            this.plugin.controller.reposition();
             await this.plugin.store.save();
           }),
       );

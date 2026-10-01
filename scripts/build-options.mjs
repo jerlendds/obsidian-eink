@@ -25,6 +25,8 @@ export function buildOptions({ production = false, adbBuildId = "" } = {}) {
     target: "es2021",
     logLevel: "info",
     treeShaking: true,
+    // Bundled handwriting model weights; release artifacts stay main.js-only.
+    loader: { ".bin": "binary" },
     sourcemap: production ? false : "inline",
     outfile: "main.js",
     minify: production,

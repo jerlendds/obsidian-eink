@@ -1,8 +1,18 @@
-import { type Stroke, widthAt } from "./model";
+import { type Point, type Stroke, widthAt } from "./model";
 
+const midpoint = (a: Point, b: Point): Point => ({ ...b, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+/**
+ * Curves pass through segment midpoints with each sample as the control point, so sparse
+ * samples from fast writing stay round. Segment i depends only on samples i-2..i, keeping
+ * incremental painting identical to a full replay. A live stroke omits its final half
+ * segment (`live`), which is drawn once the stroke is committed.
+ */
 export function renderStroke(
   context: CanvasRenderingContext2D,
   stroke: Stroke,
+  fromPoint = 0,
+  live = false,
 ): void {
   context.save();
   context.globalCompositeOperation =
@@ -13,27 +23,34 @@ export function renderStroke(
   context.lineJoin = "round";
   const type = stroke.tool === "eraser" ? "Pen" : stroke.pen.type;
   context.globalAlpha = type === "Marker" ? 0.35 : type === "Pencil" ? 0.65 : 1;
-  for (let i = 0; i < stroke.points.length; i++) {
-    const point = stroke.points[i]!;
-    const previous = stroke.points[Math.max(0, i - 1)]!;
+  const points = stroke.points;
+  const tail = !live && points.length > 1;
+  for (let i = fromPoint; i < points.length + (tail ? 1 : 0); i++) {
+    const isTail = i === points.length;
+    const point = points[isTail ? i - 1 : i]!;
+    const previous = points[Math.max(0, i - 1)]!;
     let width = widthAt(stroke.pen, point);
     if (type === "Brush") width *= 0.35 + point.pressure;
     if (type === "Fountain") width *= 0.65 + point.pressure * 0.5;
     if (type === "Calligraphy") {
-      const angle = Math.atan2(point.y - previous.y, point.x - previous.x);
+      // The tail continues the direction of the final sampled segment.
+      const from = isTail ? points[i - 2]! : previous;
+      const angle = Math.atan2(point.y - from.y, point.x - from.x);
       width *= 0.25 + 0.75 * Math.abs(Math.sin(angle - Math.PI / 4));
     }
     context.lineWidth = Math.max(0.25, width);
     context.beginPath();
-    if (i === 0 || (point.x === previous.x && point.y === previous.y)) {
-      context.arc(point.x, point.y, context.lineWidth / 2, 0, Math.PI * 2);
+    const start = i < 2 ? points[0]! : midpoint(points[i - 2]!, previous);
+    const end = isTail ? point : midpoint(previous, point);
+    if (i === 0 || (start.x === end.x && start.y === end.y)) {
+      context.arc(end.x, end.y, context.lineWidth / 2, 0, Math.PI * 2);
       context.fill();
     } else {
-      context.moveTo(previous.x, previous.y);
-      context.lineTo(point.x, point.y);
+      context.moveTo(start.x, start.y);
+      context.quadraticCurveTo(previous.x, previous.y, end.x, end.y);
       context.stroke();
     }
-    if (type === "Pencil") {
+    if (type === "Pencil" && !isTail) {
       // Deterministic paper grain, so redraw and undo reproduce the same mark.
       context.save();
       context.globalAlpha = 0.3;
